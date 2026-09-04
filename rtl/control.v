@@ -13,8 +13,14 @@
 //   imm_sel    : see imm_gen.v
 //   mem_size   : 2'b00 = byte, 2'b01 = half, 2'b10 = word
 //   mem_sign   : 1'b1 = sign extend, 1'b0 = zero extend (loads only)
+//   write_src  : 2'b11 = CSR read data
+//   csr_rmode  : 2'b00 = write, 2'b01 = set, 2'b10 = clear
+//   csr_imm    : 1'b1 = use zimm (immediate CSR variants)
+//   is_mret    : machine return
 
-module control (
+module control #(
+    parameter INTR_EN = 0
+) (
     input  wire [31:0] inst,
     output reg         reg_write,
     output reg         mem_write,
@@ -26,7 +32,12 @@ module control (
     output reg  [ 3:0] alu_control,
     output reg  [ 2:0] imm_sel,
     output reg  [ 1:0] mem_size,
-    output reg         mem_sign
+    output reg         mem_sign,
+    output reg         csr_we,
+    output reg  [ 1:0] csr_rmode,
+    output reg         csr_imm,
+    output reg         is_mret,
+    output reg         mem_read
 );
 
     wire [6:0] opcode = inst[6:0];
@@ -65,6 +76,11 @@ module control (
         imm_sel     = 3'b000;
         mem_size    = 2'b10;
         mem_sign    = 1'b1;
+        csr_we      = 1'b0;
+        csr_rmode   = 2'b00;
+        csr_imm     = 1'b0;
+        is_mret     = 1'b0;
+        mem_read    = 1'b0;
 
         case (opcode)
             7'b0110111 : begin                        // LUI
@@ -114,6 +130,7 @@ module control (
                 alu_src_b = 2'b01;                    // B = immediate
                 alu_control = 4'b0010;                // address = rs1 + imm
                 imm_sel   = 3'b000;                   // I-type
+                mem_read  = 1'b1;
                 case (funct3)
                     3'b000 : begin mem_size = 2'b00; mem_sign = 1'b1; end // LB
                     3'b001 : begin mem_size = 2'b01; mem_sign = 1'b1; end // LH
@@ -144,6 +161,29 @@ module control (
             7'b0110011 : begin                        // R-type
                 reg_write   = 1'b1;
                 alu_control = alu_decode(funct3, funct7);
+            end
+            7'b1110011 : begin                        // SYSTEM: CSR + mret
+                if (INTR_EN) begin
+                    case (funct3)
+                        3'b000 : begin
+                            // mret = 0x30200073; other funct12 (ecall/ebreak)
+                            // are treated as unsupported (no-op).
+                            is_mret = (inst == 32'h30200073);
+                        end
+                        3'b001, 3'b010, 3'b011,      // csrrw csrrs csrrc
+                        3'b101, 3'b110, 3'b111: begin// csrrwi csrrsi csrrci
+                            reg_write = 1'b1;
+                            write_src = 2'b11;       // writeback = CSR read
+                            // Register forms write only if rs1 != x0;
+                            // immediate forms always write.
+                            csr_we  = funct3[2] | (inst[19:15] != 5'b00000);
+                            csr_rmode = {funct3[1] & funct3[0],
+                                         funct3[1] & ~funct3[0]};
+                            csr_imm = funct3[2];
+                        end
+                        default : ;                  // wfi etc.: no-op
+                    endcase
+                end
             end
             default : begin
                 // Unsupported instruction: stall everything.

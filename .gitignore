@@ -1,4 +1,6 @@
 obj_dir/
 wave.vcd
+wave_soc.vcd
 sim.log
-sw/test.bin
+sim_soc.log
+sw/*.bin
