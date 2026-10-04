@@ -82,4 +82,4 @@ address-map:
 	@echo "   interrupts: irq[0]=timer, irq[1]=uart_rx, irq[2]=uart_tx"
 
 clean:
-	rm -rf obj_dir obj_gdb wave.vcd wave_soc.vcd sim.log sim_soc.log
+	rm -rf obj_dir obj_gdb wave.vcd wave_soc.vcd sim.log sim_soc.log sw/*.hex sw/*.bin sw/*.elf
