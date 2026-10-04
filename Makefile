@@ -8,7 +8,8 @@
 #   make soc-hex    - assemble sw/soc_test.S into sw/soc_test.hex
 #   make elf        - assemble+link sw/test.elf (for gdb)
 #   make soc-elf    - assemble+link sw/soc_test.elf (for gdb)
-#   make gdb        - build and run the GDB debug server on port 3333
+#   make gdb        - build and run the GDB debug server on port 3333 (SoC)
+#   make gdb-bare   - build and run the GDB debug server on port 3333 (bare)
 #   make address-map - report the address space used by each configuration
 #   make clean      - remove build artifacts
 
@@ -17,35 +18,55 @@ LD        = riscv64-elf-ld
 OBJCOPY   = riscv64-elf-objcopy
 VERILATOR = verilator
 
+# Force Apple's ar/ranlib during Verilator's --build. Homebrew's GNU
+# binutils (when its bin/ is on PATH) shadows /usr/bin/ar; GNU ar writes
+# GNU-format archives that Apple's ld rejects with:
+#   "64-bit mach-o not 8-byte aligned"
+VERILATOR_MAKEFLAGS = -MAKEFLAGS AR=/usr/bin/ar
+
 RTL = rtl/alu.v rtl/register_file.v rtl/imm_gen.v rtl/control.v \
       rtl/memory.v rtl/csr_file.v rtl/rv32i_core.v rtl/rv32i_bare.v \
       rtl/system_bus.v rtl/uart.v rtl/timer.v rtl/interrupt_controller.v \
       rtl/rv32i_soc.v
 
-.PHONY: all bare soc hex soc-hex elf soc-elf address-map gdb clean
+.PHONY: all bare soc hex soc-hex elf soc-elf bare-elf address-map gdb gdb-bare clean
 
 all: hex soc-hex bare soc
 
 bare: hex
-	$(VERILATOR) --binary --timing --trace -j 2 +incdir+tb \
-		--top-module tb_rv32i -o sim_rv32i \
-		$(RTL) tb/tb_rv32i.v
-	./obj_dir/sim_rv32i
+	rm -rf obj_dir_bare
+	$(VERILATOR) --binary --timing --trace -j 1 +incdir+tb \
+		--top-module tb_rv32i -o sim_rv32i --Mdir obj_dir_bare \
+		$(VERILATOR_MAKEFLAGS) $(RTL) tb/tb_rv32i.v
+	./obj_dir_bare/sim_rv32i
 
 soc: soc-hex
-	$(VERILATOR) --binary --timing --trace -j 2 +incdir+tb \
-		--top-module tb_soc -o sim_soc \
-		$(RTL) tb/tb_soc.v
-	./obj_dir/sim_soc
+	rm -rf obj_dir_soc
+	$(VERILATOR) --binary --timing --trace -j 1 +incdir+tb \
+		--top-module tb_soc -o sim_soc --Mdir obj_dir_soc \
+		$(VERILATOR_MAKEFLAGS) $(RTL) tb/tb_soc.v
+	./obj_dir_soc/sim_soc
 
 # Build the GDB debug server and start it on port 3333 (or $$GDB_PORT).
 # The ELF (sw/soc_test.elf) is built first so it can be loaded in gdb:
 #   riscv64-elf-gdb sw/soc_test.elf   ->   target remote :3333
 gdb: sw/soc_test.elf
-	$(VERILATOR) --cc --build --exe -j 2 +incdir+tb \
+	rm -rf obj_gdb
+	$(VERILATOR) --cc --build --exe -j 1 +incdir+tb \
 		--top-module rv32i_gdb -o rv32i_gdb --Mdir obj_gdb \
-		$(RTL) rtl/rv32i_gdb.v tb/gdb_main.cpp
+		$(VERILATOR_MAKEFLAGS) $(RTL) rtl/rv32i_gdb.v tb/gdb_main.cpp
 	./obj_gdb/rv32i_gdb $${GDB_PORT:-3333}
+
+# Bare-configuration GDB debug server. Load sw/bare_test.elf in gdb, then
+# target remote :3333. No UART/peripherals, so only core + memory are modeled.
+gdb-bare: sw/bare_test.elf
+	rm -rf obj_gdb_bare
+	$(VERILATOR) --cc --build --exe -j 1 +incdir+tb \
+		--top-module rv32i_gdb_bare -o rv32i_gdb_bare --Mdir obj_gdb_bare \
+		$(VERILATOR_MAKEFLAGS) \
+		rtl/alu.v rtl/register_file.v rtl/imm_gen.v rtl/control.v \
+		rtl/memory.v rtl/rv32i_core.v rtl/rv32i_gdb_bare.v tb/gdb_bare_main.cpp
+	./obj_gdb_bare/rv32i_gdb_bare $${GDB_PORT:-3333}
 
 # Assemble + link (the linker resolves PC-relative la/auipc relocations).
 # The ELF is kept in sw/ so it can be loaded with gdb; the hex image is
@@ -62,10 +83,17 @@ sw/soc_test.elf sw/soc_test.hex: sw/soc_test.S sw/link.ld
 	$(OBJCOPY) -O binary sw/soc_test.elf sw/soc_test.bin
 	xxd -p -c 1 sw/soc_test.bin > sw/soc_test.hex
 
+sw/bare_test.elf sw/bare_test.hex: sw/bare_test.S sw/link.ld
+	$(AS) -march=rv32i -mabi=ilp32 sw/bare_test.S -o /tmp/riscv_bare_test.o
+	$(LD) -m elf32lriscv -T sw/link.ld /tmp/riscv_bare_test.o -o sw/bare_test.elf
+	$(OBJCOPY) -O binary sw/bare_test.elf sw/bare_test.bin
+	xxd -p -c 1 sw/bare_test.bin > sw/bare_test.hex
+
 hex: sw/test.hex
 soc-hex: sw/soc_test.hex
 elf: sw/test.elf
 soc-elf: sw/soc_test.elf
+bare-elf: sw/bare_test.elf
 
 address-map:
 	@echo "============================================================"
@@ -82,4 +110,4 @@ address-map:
 	@echo "   interrupts: irq[0]=timer, irq[1]=uart_rx, irq[2]=uart_tx"
 
 clean:
-	rm -rf obj_dir obj_gdb wave.vcd wave_soc.vcd sim.log sim_soc.log sw/*.hex sw/*.bin sw/*.elf
+	rm -rf obj_dir obj_dir_bare obj_dir_soc obj_gdb obj_gdb_bare wave.vcd wave_soc.vcd sim.log sim_soc.log sw/*.hex sw/*.bin sw/*.elf

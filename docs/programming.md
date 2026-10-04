@@ -298,6 +298,19 @@ make gdb              # builds the stub AND sw/soc_test.elf, runs on :3333
 The build writes the loadable ELF to `sw/soc_test.elf` (or use
 `make soc-elf` for it alone, `make elf` for `sw/test.elf`).
 
+To debug the **bare** configuration instead (core + memory only, no
+peripherals), use `make gdb-bare`, then load `sw/bare_test.elf`:
+
+```sh
+make gdb-bare        # builds the bare stub AND sw/bare_test.elf, runs on :3333
+```
+
+```sh
+riscv64-elf-gdb sw/bare_test.elf
+(gdb) target remote :3333
+(gdb) load
+```
+
 In another terminal:
 
 ```sh
@@ -335,7 +348,8 @@ Limitations:
 
 The stub is implemented in `tb/gdb_main.cpp` with a small debug interface
 in the RTL (`rv32i_core`, `register_file`, `csr_file`, `memory`, exposed by
-`rtl/rv32i_gdb.v`).
+`rtl/rv32i_gdb.v`). The bare-configuration server uses `tb/gdb_bare_main.cpp`
+and the top module `rtl/rv32i_gdb_bare.v`.
 
 ---
 

@@ -1,9 +1,13 @@
 obj_dir/
+obj_dir_bare/
+obj_dir_soc/
 obj_gdb/
+obj_gdb_bare/
 wave.vcd
 wave_soc.vcd
 sim.log
 sim_soc.log
 sw/*.bin
 sw/*.elf
+sw/*.hex
 .DS_Store
