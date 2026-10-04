@@ -36,6 +36,19 @@ module rv32i_core #(
     input  wire [31:0] data_rdata,
     // Interrupt request lines (only used when INTR_EN = 1)
     input  wire [ 3:0] irq,
+    // Debug interface (GDB remote stub). When dbg_hold is high the CPU is
+    // halted: no instruction executes and the PC stays put, so the host can
+    // read/write registers and memory safely.
+    input  wire        dbg_hold,
+    input  wire        dbg_pc_we,
+    input  wire [31:0] dbg_pc_wval,
+    input  wire [ 4:0] dbg_reg_ridx,
+    output wire [31:0] dbg_reg_rval,
+    input  wire        dbg_reg_we,
+    input  wire [ 4:0] dbg_reg_widx,
+    input  wire [31:0] dbg_reg_wval,
+    input  wire [11:0] dbg_csr_idx,
+    output wire [31:0] dbg_csr_val,
     // Debug / trace ports
     output wire [31:0] dbg_pc,
     output wire [31:0] dbg_inst,
@@ -107,7 +120,7 @@ module rv32i_core #(
 
             // Interrupt pending: requested AND enabled AND globally enabled.
             assign irq_pending = irq & mie[3:0] & {4{mstatus[3]}};
-            assign take_trap   = |irq_pending;
+            assign take_trap   = ~dbg_hold & |irq_pending;
 
             // Lowest-index pending line wins.
             always @(*) begin
@@ -139,7 +152,9 @@ module rv32i_core #(
                 .mie         (mie),
                 .mtvec       (mtvec),
                 .mepc        (mepc),
-                .irq         (irq)
+                .irq         (irq),
+                .dbg_csr_idx (dbg_csr_idx),
+                .dbg_csr_val (dbg_csr_val)
             );
         end else begin : no_intr
             assign take_trap   = 1'b0;
@@ -157,6 +172,10 @@ module rv32i_core #(
     always @(posedge clk or posedge rst) begin
         if (rst)
             pc <= 32'b0;
+        else if (dbg_pc_we)
+            pc <= dbg_pc_wval;
+        else if (dbg_hold)
+            pc <= pc;
         else
             pc <= pc_target;
     end
@@ -176,7 +195,7 @@ module rv32i_core #(
     wire [3:0] wen_half = data_addr[1] ? 4'b1100 : 4'b0011;
     wire [3:0] wen_base = (mem_size == 2'b00) ? wen_byte :
                           (mem_size == 2'b01) ? wen_half : 4'b1111;
-    assign data_wen = (mem_write & ~rst) ? wen_base : 4'b0000;
+    assign data_wen = (mem_write & ~rst & ~dbg_hold) ? wen_base : 4'b0000;
 
     // ---- Load data sign/zero extension ----
     wire [7:0]  lb_data = data_rdata[data_addr[1:0] * 8 +: 8];
@@ -193,8 +212,8 @@ module rv32i_core #(
                      (write_src == 2'b01) ? mem_data :
                      (write_src == 2'b10) ? imm : csr_rdata;
 
-    // No register writes while reset is asserted.
-    wire wb_we = reg_write & ~rst;
+    // No register writes while reset is asserted or the CPU is halted.
+    wire wb_we = reg_write & ~rst & ~dbg_hold;
 
     // ---- Outputs ----
     assign inst_addr      = pc;
@@ -236,14 +255,19 @@ module rv32i_core #(
     );
 
     register_file u_regfile (
-        .clk   (clk),
-        .we    (wb_we),
-        .rs1   (inst[19:15]),
-        .rs2   (inst[24:20]),
-        .rd    (inst[11:7]),
-        .wdata (wb_data),
-        .rd1   (rd1),
-        .rd2   (rd2)
+        .clk        (clk),
+        .we         (wb_we),
+        .rs1        (inst[19:15]),
+        .rs2        (inst[24:20]),
+        .rd         (inst[11:7]),
+        .wdata      (wb_data),
+        .rd1        (rd1),
+        .rd2        (rd2),
+        .dbg_ridx   (dbg_reg_ridx),
+        .dbg_rval   (dbg_reg_rval),
+        .dbg_we     (dbg_reg_we),
+        .dbg_widx   (dbg_reg_widx),
+        .dbg_wval   (dbg_reg_wval)
     );
 
     imm_gen u_immgen (

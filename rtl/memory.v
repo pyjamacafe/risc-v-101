@@ -26,7 +26,11 @@ module unified_memory #(
     output reg  [31:0] data_rdata,
     // Debug peek port (combinational read at an arbitrary address)
     input  wire [31:0] dbg_addr,
-    output reg  [31:0] dbg_data
+    output reg  [31:0] dbg_data,
+    // Debug write port (GDB remote stub; held while the CPU is halted)
+    input  wire [31:0] dbg_write_addr,
+    input  wire [31:0] dbg_write_data,
+    input  wire [ 3:0] dbg_write_en
 );
 
     reg [7:0] mem [0:MEM_BYTES-1];
@@ -80,6 +84,15 @@ module unified_memory #(
             mem[data_base+2] <= data_wdata[23:16];
         if (data_wen[3] && data_base + 3 < MEM_BYTES)
             mem[data_base+3] <= data_wdata[31:24];
+        // Debug writes (GDB): the CPU is held, so data_wen is inactive.
+        if (dbg_write_en[0] && dbg_write_addr < MEM_BYTES)
+            mem[dbg_write_addr]   <= dbg_write_data[7:0];
+        if (dbg_write_en[1] && dbg_write_addr + 1 < MEM_BYTES)
+            mem[dbg_write_addr+1] <= dbg_write_data[15:8];
+        if (dbg_write_en[2] && dbg_write_addr + 2 < MEM_BYTES)
+            mem[dbg_write_addr+2] <= dbg_write_data[23:16];
+        if (dbg_write_en[3] && dbg_write_addr + 3 < MEM_BYTES)
+            mem[dbg_write_addr+3] <= dbg_write_data[31:24];
     end
 
 endmodule

@@ -43,6 +43,16 @@ module rv32i_bare #(
         .data_read     (),
         .data_rdata    (data_rdata),
         .irq           (4'b0000),
+        .dbg_hold      (1'b0),
+        .dbg_pc_we     (1'b0),
+        .dbg_pc_wval   (32'b0),
+        .dbg_reg_ridx  (5'b0),
+        .dbg_reg_rval  (),
+        .dbg_reg_we    (1'b0),
+        .dbg_reg_widx  (5'b0),
+        .dbg_reg_wval  (32'b0),
+        .dbg_csr_idx   (12'b0),
+        .dbg_csr_val   (),
         .dbg_pc        (dbg_pc),
         .dbg_inst      (dbg_inst),
         .dbg_rd        (dbg_rd),
@@ -66,7 +76,10 @@ module rv32i_bare #(
         .data_wen    (data_wen),
         .data_rdata  (data_rdata),
         .dbg_addr    (dbg_peek_addr),
-        .dbg_data    (dbg_peek_data)
+        .dbg_data    (dbg_peek_data),
+        .dbg_write_addr (32'b0),
+        .dbg_write_data (32'b0),
+        .dbg_write_en   (4'b0000)
     );
 
 endmodule

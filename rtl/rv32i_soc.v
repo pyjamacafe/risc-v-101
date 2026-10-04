@@ -25,6 +25,20 @@ module rv32i_soc #(
     output wire [31:0] dbg_inst,
     input  wire [31:0] dbg_peek_addr,
     output wire [31:0] dbg_peek_data,
+    // Debug / GDB interface
+    input  wire        dbg_hold,
+    input  wire        dbg_pc_we,
+    input  wire [31:0] dbg_pc_wval,
+    input  wire [ 4:0] dbg_reg_ridx,
+    output wire [31:0] dbg_reg_rval,
+    input  wire        dbg_reg_we,
+    input  wire [ 4:0] dbg_reg_widx,
+    input  wire [31:0] dbg_reg_wval,
+    input  wire [11:0] dbg_csr_idx,
+    output wire [31:0] dbg_csr_val,
+    input  wire [31:0] dbg_mem_waddr,
+    input  wire [31:0] dbg_mem_wdata,
+    input  wire [ 3:0] dbg_mem_wen,
     // Detailed trace ports
     output wire [ 4:0] dbg_rd,
     output wire [31:0] dbg_wb_data,
@@ -70,6 +84,16 @@ module rv32i_soc #(
         .data_read     (data_rd),
         .data_rdata    (data_rdata),
         .irq           (irq),
+        .dbg_hold      (dbg_hold),
+        .dbg_pc_we     (dbg_pc_we),
+        .dbg_pc_wval   (dbg_pc_wval),
+        .dbg_reg_ridx  (dbg_reg_ridx),
+        .dbg_reg_rval  (dbg_reg_rval),
+        .dbg_reg_we    (dbg_reg_we),
+        .dbg_reg_widx  (dbg_reg_widx),
+        .dbg_reg_wval  (dbg_reg_wval),
+        .dbg_csr_idx   (dbg_csr_idx),
+        .dbg_csr_val   (dbg_csr_val),
         .dbg_pc        (dbg_pc),
         .dbg_inst      (dbg_inst),
         .dbg_rd        (dbg_rd),
@@ -94,7 +118,10 @@ module rv32i_soc #(
         .data_wen    (mem_wen),
         .data_rdata  (mem_rdata),
         .dbg_addr    (dbg_peek_addr),
-        .dbg_data    (dbg_peek_data)
+        .dbg_data    (dbg_peek_data),
+        .dbg_write_addr (dbg_mem_waddr),
+        .dbg_write_data (dbg_mem_wdata),
+        .dbg_write_en   (dbg_mem_wen)
     );
 
     // System bus

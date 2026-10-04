@@ -33,7 +33,10 @@ module csr_file (
     output reg  [31:0] mstatus,
     output reg  [31:0] mie,
     output reg  [31:0] mtvec,
-    output reg  [31:0] mepc
+    output reg  [31:0] mepc,
+    // Debug read (GDB remote stub)
+    input  wire [11:0] dbg_csr_idx,
+    output reg  [31:0] dbg_csr_val
 );
 
     localparam MIE  = 3;
@@ -53,6 +56,20 @@ module csr_file (
             12'h342: csr_rdata = mcause;
             12'h344: csr_rdata = {28'b0, irq};   // mip
             default: csr_rdata = 32'b0;
+        endcase
+    end
+
+    // Debug read (independent of the CPU instruction stream).
+    always @(*) begin
+        case (dbg_csr_idx)
+            12'h300: dbg_csr_val = mstatus;
+            12'h304: dbg_csr_val = mie;
+            12'h305: dbg_csr_val = mtvec;
+            12'h340: dbg_csr_val = mscratch;
+            12'h341: dbg_csr_val = mepc;
+            12'h342: dbg_csr_val = mcause;
+            12'h344: dbg_csr_val = {28'b0, irq};
+            default: dbg_csr_val = 32'b0;
         endcase
     end
 

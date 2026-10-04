@@ -1,6 +1,9 @@
 obj_dir/
+obj_gdb/
 wave.vcd
 wave_soc.vcd
 sim.log
 sim_soc.log
 sw/*.bin
+sw/*.elf
+.DS_Store

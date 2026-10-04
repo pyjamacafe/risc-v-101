@@ -6,6 +6,9 @@
 #                     + UART + timer + interrupts)
 #   make hex        - assemble sw/test.S into sw/test.hex
 #   make soc-hex    - assemble sw/soc_test.S into sw/soc_test.hex
+#   make elf        - assemble+link sw/test.elf (for gdb)
+#   make soc-elf    - assemble+link sw/soc_test.elf (for gdb)
+#   make gdb        - build and run the GDB debug server on port 3333
 #   make address-map - report the address space used by each configuration
 #   make clean      - remove build artifacts
 
@@ -19,7 +22,7 @@ RTL = rtl/alu.v rtl/register_file.v rtl/imm_gen.v rtl/control.v \
       rtl/system_bus.v rtl/uart.v rtl/timer.v rtl/interrupt_controller.v \
       rtl/rv32i_soc.v
 
-.PHONY: all bare soc hex soc-hex address-map clean
+.PHONY: all bare soc hex soc-hex elf soc-elf address-map gdb clean
 
 all: hex soc-hex bare soc
 
@@ -35,21 +38,34 @@ soc: soc-hex
 		$(RTL) tb/tb_soc.v
 	./obj_dir/sim_soc
 
-# Assemble + link (linker resolves PC-relative la/auipc relocations)
-sw/test.hex: sw/test.S sw/link.ld
-	$(AS) -march=rv32i_zicsr -mabi=ilp32 $< -o /tmp/riscv_test.o
-	$(LD) -m elf32lriscv -T sw/link.ld /tmp/riscv_test.o -o /tmp/riscv_test.elf
-	$(OBJCOPY) -O binary /tmp/riscv_test.elf sw/test.bin
-	xxd -p -c 1 sw/test.bin > $@
+# Build the GDB debug server and start it on port 3333 (or $$GDB_PORT).
+# The ELF (sw/soc_test.elf) is built first so it can be loaded in gdb:
+#   riscv64-elf-gdb sw/soc_test.elf   ->   target remote :3333
+gdb: sw/soc_test.elf
+	$(VERILATOR) --cc --build --exe -j 2 +incdir+tb \
+		--top-module rv32i_gdb -o rv32i_gdb --Mdir obj_gdb \
+		$(RTL) rtl/rv32i_gdb.v tb/gdb_main.cpp
+	./obj_gdb/rv32i_gdb $${GDB_PORT:-3333}
 
-sw/soc_test.hex: sw/soc_test.S sw/link.ld
-	$(AS) -march=rv32i_zicsr -mabi=ilp32 $< -o /tmp/riscv_soc_test.o
-	$(LD) -m elf32lriscv -T sw/link.ld /tmp/riscv_soc_test.o -o /tmp/riscv_soc_test.elf
-	$(OBJCOPY) -O binary /tmp/riscv_soc_test.elf sw/soc_test.bin
-	xxd -p -c 1 sw/soc_test.bin > $@
+# Assemble + link (the linker resolves PC-relative la/auipc relocations).
+# The ELF is kept in sw/ so it can be loaded with gdb; the hex image is
+# what the Verilog testbenches load via $readmemh.
+sw/test.elf sw/test.hex: sw/test.S sw/link.ld
+	$(AS) -march=rv32i_zicsr -mabi=ilp32 sw/test.S -o /tmp/riscv_test.o
+	$(LD) -m elf32lriscv -T sw/link.ld /tmp/riscv_test.o -o sw/test.elf
+	$(OBJCOPY) -O binary sw/test.elf sw/test.bin
+	xxd -p -c 1 sw/test.bin > sw/test.hex
+
+sw/soc_test.elf sw/soc_test.hex: sw/soc_test.S sw/link.ld
+	$(AS) -march=rv32i_zicsr -mabi=ilp32 sw/soc_test.S -o /tmp/riscv_soc_test.o
+	$(LD) -m elf32lriscv -T sw/link.ld /tmp/riscv_soc_test.o -o sw/soc_test.elf
+	$(OBJCOPY) -O binary sw/soc_test.elf sw/soc_test.bin
+	xxd -p -c 1 sw/soc_test.bin > sw/soc_test.hex
 
 hex: sw/test.hex
 soc-hex: sw/soc_test.hex
+elf: sw/test.elf
+soc-elf: sw/soc_test.elf
 
 address-map:
 	@echo "============================================================"
@@ -66,4 +82,4 @@ address-map:
 	@echo "   interrupts: irq[0]=timer, irq[1]=uart_rx, irq[2]=uart_tx"
 
 clean:
-	rm -rf obj_dir wave.vcd wave_soc.vcd sim.log sim_soc.log
+	rm -rf obj_dir obj_gdb wave.vcd wave_soc.vcd sim.log sim_soc.log
